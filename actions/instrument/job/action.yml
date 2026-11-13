@@ -4,6 +4,12 @@ branding:
   icon: 'activity'
   color: 'blue'
 inputs:
+  artifacts:
+    description: 'enabled uses Actions artifacts for trace context/deferred export; disabled forbids artifacts and requires an externally persisted traceparent plus direct exporters'
+    default: enabled
+  traceparent:
+    description: 'Externally persisted W3C traceparent, required when artifacts is disabled'
+    default: ''
   github_token:
     description: 'A GitHub token for API access, needs read access to the scopes repo and actions. Do not set manually unless you know exactly what you are doing, the default token should always be enough.'
     default: '${{ github.token }}'

@@ -3,6 +3,8 @@ set -e
 sudo_e() { sudo --preserve-env="$(compgen -e | paste -sd, -)" "$@"; }
 export -f sudo_e
 if [ -n "$INPUT_DEBUG" ]; then set -mx; fi
+. ../shared/artifact_policy.sh
+configure_artifact_policy
 FAST_DEB_INSTALL="${FAST_DEB_INSTALL:-TRUE}"
 ASYNC_INIT="${ASYNC_INIT:-TRUE}"
 [ -z "$INPUT_DEBUG" ] || ASYNC_INIT=FALSE
@@ -401,6 +403,7 @@ fi
 echo "::endgroup::"
 
 echo "::group::Resolve W3C Tracecontext"
+if [ "${OTEL_GITHUB_ARTIFACTS_DISABLED:-FALSE}" != TRUE ]; then
 opentelemetry_root_dir="$(mktemp -d)"
 count=0
 while [ "$count" -lt 60 ] && ! ( gh_artifact_download "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" opentelemetry_workflow_run_"$GITHUB_RUN_ATTEMPT" "$opentelemetry_root_dir" && [ -r "$opentelemetry_root_dir"/traceparent ] ); do
@@ -417,6 +420,9 @@ done
 [ -r "$opentelemetry_root_dir"/traceparent ] || (echo "::error ::Cannot sync trace id via artifacts. This is most likely a token permission issue, please consult the README." && false)
 export TRACEPARENT="$(cat "$opentelemetry_root_dir"/traceparent)"
 rm -rf "$opentelemetry_root_dir"
+else
+  echo 'Using externally persisted trace context; Actions artifacts are disabled.'
+fi
 echo "::endgroup::"
 
 echo "::group::Calculate Resource Attributes"
@@ -626,7 +632,7 @@ root4job_end() {
   cat "$collector_pipe_error" | grep -E '^(err|error|fatal|dpanic) ' | cut -d ' ' -f 2- | sort -u | while read -r line; do echo ::error::"$line"; done &
   cat otelcol."$$".log | tr '\t' ' ' | cut -d ' ' -f 2- | tee "$collector_pipe_warning" | tee "$collector_pipe_error" | { if [ -n "$INPUT_DEBUG" ]; then cat; else cat >/dev/null; fi; }
 
-  if [ -n "${INTERNAL_OTEL_DEFERRED_EXPORT_DIR:-}" ]; then
+  if [ -n "${INTERNAL_OTEL_DEFERRED_EXPORT_DIR:-}" ] && [ "${OTEL_GITHUB_ARTIFACTS_DISABLED:-FALSE}" != TRUE ]; then
     export -f gh_artifact_upload
     find "$INTERNAL_OTEL_DEFERRED_EXPORT_DIR" | grep -E '.logs$|.metrics$|.traces$' | parallel -X gh_artifact_upload "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" opentelemetry_job_"$GITHUB_JOB_ID"_signals_'{#}' '{}' &
   fi
@@ -701,9 +707,11 @@ root4job() {
         [ -z "$job_queue_duration_s" ] || otel_span_attribute_typed "$span_handle" float github.actions.job.queue.duration="$job_queue_duration_s"
       fi
     fi
+    if [ "${OTEL_GITHUB_ARTIFACTS_DISABLED:-FALSE}" != TRUE ]; then
     opentelemetry_job_dir="$(mktemp -d)"
     echo "$TRACEPARENT" >"$opentelemetry_job_dir"/traceparent
     (gh_artifact_upload "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" opentelemetry_job_"$GITHUB_JOB_ID" "$opentelemetry_job_dir"/traceparent && rm -rf "$opentelemetry_job_dir") &>/dev/null &
+    fi
   fi
   otel_span_deactivate "$span_handle"
   trap root4job_end SIGUSR1
@@ -742,4 +750,3 @@ printenv | grep -E '^OTEL_|^TRACEPARENT=|^TRACESTATE=|^COPILOT_OTEL_ENABLED=' >>
 echo "::endgroup::"
 
 echo ::notice title=Observability Information for "${OTEL_SHELL_GITHUB_JOB:-$GITHUB_JOB}"::"Trace ID: $(echo "$TRACEPARENT" | cut -d - -f 2), Span ID: $(echo "$TRACEPARENT" | cut -d - -f 3), Trace Deep Link: $(OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="$backup_otel_exporter_otlp_traces_endpoint" print_trace_link "$(date +%Y-%M-%dT%H:%M:%S.%N%:z | jq -sRr @uri)" || echo unavailable)"
-

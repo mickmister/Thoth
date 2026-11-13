@@ -88,12 +88,14 @@ gh_artifacts() {
 export -f gh_artifacts
 
 gh_artifact_download() {
+  [ "${OTEL_GITHUB_ARTIFACTS_DISABLED:-FALSE}" != TRUE ] || { echo '::error::Actions artifacts are disabled' >&2; return 1; }
   local artifact_filename="$(mktemp)"
   gh_curl /actions/runs/"$1"/artifacts'?per_page=1&'name="$3" | jq '.artifacts[0].id' | grep -v '^null$' | xargs -r -I '{}' bash -c 'gh_curl "$@"' bash /actions/artifacts/'{}'/zip --head | tr -d '\r' | grep '^location:' | cut -d ' ' -f 2- | xargs -r wget -q -O "$artifact_filename" && [ -r "$artifact_filename" ] && unzip "$artifact_filename" -d "$4" >&2 && rm "$artifact_filename"
 }
 export -f gh_artifact_download
 
 gh_artifact_upload() {
+  [ "${OTEL_GITHUB_ARTIFACTS_DISABLED:-FALSE}" != TRUE ] || { echo '::error::Actions artifacts are disabled' >&2; return 1; }
   GITHUB_TOKEN="$INPUT_GITHUB_TOKEN" node --input-type=module -e '
     import path from "node:path";
     import { DefaultArtifactClient } from "@actions/artifact";
@@ -103,6 +105,7 @@ gh_artifact_upload() {
 export -f gh_artifact_upload
 
 gh_artifact_delete() {
+  [ "${OTEL_GITHUB_ARTIFACTS_DISABLED:-FALSE}" != TRUE ] || { echo '::error::Actions artifacts are disabled' >&2; return 1; }
   GITHUB_TOKEN="$INPUT_GITHUB_TOKEN" node --input-type=module -e '
     import { DefaultArtifactClient } from "@actions/artifact";
     new DefaultArtifactClient().deleteArtifact("'"$3"'");
