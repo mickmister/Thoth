@@ -10,6 +10,9 @@ inputs:
   traceparent:
     description: 'Externally persisted W3C traceparent, required when artifacts is disabled'
     default: ''
+  release_repository:
+    description: 'Repository supplying the SDK release matching this checkout VERSION; defaults to the action repository'
+    default: ''
   github_token:
     description: 'A GitHub token for API access, needs read access to the scopes repo and actions. Do not set manually unless you know exactly what you are doing, the default token should always be enough.'
     default: '${{ github.token }}'
